@@ -1,0 +1,798 @@
+<!-- templates/index.html -->
+
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>Pflanzenüberwachung Dashboard</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.1"></script>
+    <!-- Luxon für Zeitformatierung -->
+    <script src="https://cdn.jsdelivr.net/npm/luxon@3.3.0/build/global/luxon.min.js"></script>
+    <!-- Chart.js Luxon Adapter -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.0"></script>
+    <!-- Socket.IO -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        body {
+            background-color: #f8f9fa;
+            padding-top: 20px;
+            padding-bottom: 20px;
+        }
+        .container {
+            max-width: 1200px;
+        }
+        .nav-tabs .nav-link.active {
+            background-color: #0d6efd;
+            color: white;
+        }
+        .card {
+            margin-bottom: 20px;
+        }
+        canvas {
+            max-width: 100%;
+            height: 400px;
+        }
+        .stats {
+            margin-top: 15px;
+        }
+        .stats p {
+            margin: 0;
+        }
+        #feedback {
+            margin-top: 15px;
+        }
+        #intervalForm {
+            max-width: 300px;
+            margin: 0 auto 20px auto;
+        }
+        .current-data {
+            margin-bottom: 20px;
+        }
+        .current-data .card {
+            margin-bottom: 10px;
+        }
+        .current-data h5 {
+            margin-bottom: 15px;
+        }
+        .current-data .card-body {
+            padding: 10px;
+        }
+        .current-data .data-value {
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+        .alert-indicator {
+            font-weight: bold;
+        }
+        .optimal {
+            color: green;
+        }
+        .warning {
+            color: orange;
+        }
+        .danger {
+            color: red;
+        }
+        /* Modal Styles */
+        .modal-body .form-group {
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-center mb-4">Pflanzenüberwachung Dashboard</h1>
+
+        <!-- Aktuelle Daten für jede Pflanze -->
+        <div class="current-data">
+            <h5 class="text-center">Aktuelle Messwerte</h5>
+            <div class="row">
+                <!-- Monstera -->
+                <div class="col-md-4" id="current_monstera">
+                    <div class="card">
+                        <div class="card-header text-center">
+                            Monstera
+                            <button class="btn btn-sm btn-secondary float-end" onclick="openThresholdModal('monstera')">Einstellungen</button>
+                        </div>
+                        <div class="card-body text-center">
+                            <p>Bodenfeuchtigkeit: <span class="data-value" id="current_soil_monstera">-</span> % <span id="soil_status_monstera" class="alert-indicator"></span></p>
+                            <p>Temperatur: <span class="data-value" id="current_temp_monstera">-</span> °C <span id="temp_status_monstera" class="alert-indicator"></span></p>
+                            <p>Luftfeuchtigkeit: <span class="data-value" id="current_humidity_monstera">-</span> % <span id="humidity_status_monstera" class="alert-indicator"></span></p>
+                            <p id="recommendation_monstera" class="mt-2"></p>
+                        </div>
+                    </div>
+                </div>
+                <!-- Buschkopf -->
+                <div class="col-md-4" id="current_buschkopf">
+                    <div class="card">
+                        <div class="card-header text-center">
+                            Buschkopf
+                            <button class="btn btn-sm btn-secondary float-end" onclick="openThresholdModal('buschkopf')">Einstellungen</button>
+                        </div>
+                        <div class="card-body text-center">
+                            <p>Bodenfeuchtigkeit: <span class="data-value" id="current_soil_buschkopf">-</span> % <span id="soil_status_buschkopf" class="alert-indicator"></span></p>
+                            <p>Temperatur: <span class="data-value" id="current_temp_buschkopf">-</span> °C <span id="temp_status_buschkopf" class="alert-indicator"></span></p>
+                            <p>Luftfeuchtigkeit: <span class="data-value" id="current_humidity_buschkopf">-</span> % <span id="humidity_status_buschkopf" class="alert-indicator"></span></p>
+                            <p id="recommendation_buschkopf" class="mt-2"></p>
+                        </div>
+                    </div>
+                </div>
+                <!-- Andere -->
+                <div class="col-md-4" id="current_andere">
+                    <div class="card">
+                        <div class="card-header text-center">
+                            Andere
+                            <button class="btn btn-sm btn-secondary float-end" onclick="openThresholdModal('andere')">Einstellungen</button>
+                        </div>
+                        <div class="card-body text-center">
+                            <p>Bodenfeuchtigkeit: <span class="data-value" id="current_soil_andere">-</span> % <span id="soil_status_andere" class="alert-indicator"></span></p>
+                            <p>Temperatur: <span class="data-value" id="current_temp_andere">-</span> °C <span id="temp_status_andere" class="alert-indicator"></span></p>
+                            <p>Luftfeuchtigkeit: <span class="data-value" id="current_humidity_andere">-</span> % <span id="humidity_status_andere" class="alert-indicator"></span></p>
+                            <p id="recommendation_andere" class="mt-2"></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Intervall-Einstellung -->
+        <div id="intervalForm" class="text-center mb-4">
+            <div class="input-group">
+                <input type="number" id="intervalInput" class="form-control" placeholder="Intervall (Min)" min="1">
+                <button id="setIntervalButton" class="btn btn-primary">Intervall einstellen</button>
+            </div>
+            <small id="currentInterval" class="form-text text-muted">Aktuelles Intervall: Lädt...</small>
+        </div>
+
+        <!-- Löschen Button -->
+        <div class="text-center mb-4">
+            <button id="deleteDataButton" class="btn btn-danger">Alle Sensordaten löschen</button>
+        </div>
+        <!-- Feedback-Bereich -->
+        <div id="feedback" class="alert alert-info text-center d-none" role="alert"></div>
+        <!-- Navigation Tabs -->
+        <ul class="nav nav-tabs" id="sensorTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="monstera-tab" data-bs-toggle="tab" data-bs-target="#monstera" type="button" role="tab" aria-controls="monstera" aria-selected="true">Monstera</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="buschkopf-tab" data-bs-toggle="tab" data-bs-target="#buschkopf" type="button" role="tab" aria-controls="buschkopf" aria-selected="false">Buschkopf</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="andere-tab" data-bs-toggle="tab" data-bs-target="#andere" type="button" role="tab" aria-controls="andere" aria-selected="false">Andere</button>
+            </li>
+        </ul>
+        <div class="tab-content" id="sensorTabsContent">
+            <!-- Monstera Tab -->
+            <div class="tab-pane fade show active" id="monstera" role="tabpanel" aria-labelledby="monstera-tab">
+                <div class="card mt-3">
+                    <div class="card-body">
+                        <canvas id="chart_monstera"></canvas>
+                        <div class="stats" id="stats_monstera"></div>
+                    </div>
+                </div>
+            </div>
+            <!-- Buschkopf Tab -->
+            <div class="tab-pane fade" id="buschkopf" role="tabpanel" aria-labelledby="buschkopf-tab">
+                <div class="card mt-3">
+                    <div class="card-body">
+                        <canvas id="chart_buschkopf"></canvas>
+                        <div class="stats" id="stats_buschkopf"></div>
+                    </div>
+                </div>
+            </div>
+            <!-- Andere Tab -->
+            <div class="tab-pane fade" id="andere" role="tabpanel" aria-labelledby="andere-tab">
+                <div class="card mt-3">
+                    <div class="card-body">
+                        <canvas id="chart_andere"></canvas>
+                        <div class="stats" id="stats_andere"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal für Schwellenwerte -->
+    <div class="modal fade" id="thresholdModal" tabindex="-1" aria-labelledby="thresholdModalLabel" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 id="thresholdModalLabel" class="modal-title">Schwellenwerte einstellen</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+          </div>
+          <div class="modal-body">
+            <form id="thresholdForm">
+              <input type="hidden" id="thresholdLocation">
+              <!-- Bodenfeuchtigkeit -->
+              <div class="form-group">
+                <label>Bodenfeuchtigkeit Optimalbereich (%)</label>
+                <div class="input-group">
+                  <input type="number" id="soil_optimal_min" class="form-control" placeholder="Min" required>
+                  <input type="number" id="soil_optimal_max" class="form-control" placeholder="Max" required>
+                </div>
+              </div>
+              <!-- Temperatur -->
+              <div class="form-group">
+                <label>Temperatur Optimalbereich (°C)</label>
+                <div class="input-group">
+                  <input type="number" id="temp_optimal_min" class="form-control" placeholder="Min" required>
+                  <input type="number" id="temp_optimal_max" class="form-control" placeholder="Max" required>
+                </div>
+              </div>
+              <!-- Luftfeuchtigkeit -->
+              <div class="form-group">
+                <label>Luftfeuchtigkeit Optimalbereich (%)</label>
+                <div class="input-group">
+                  <input type="number" id="humidity_optimal_min" class="form-control" placeholder="Min" required>
+                  <input type="number" id="humidity_optimal_max" class="form-control" placeholder="Max" required>
+                </div>
+              </div>
+              <!-- Speichern Button -->
+              <button type="button" class="btn btn-primary mt-3" onclick="saveThresholds()">Speichern</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bootstrap 5 JS und Abhängigkeiten -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        const { DateTime } = luxon;
+        var socket = io();
+
+        var charts = {};
+        var dataStore = {};
+        var currentData = {};
+        var thresholds = {}; // Schwellenwerte werden vom Server geladen
+
+        function createChart(location) {
+            var ctx = document.getElementById('chart_' + location).getContext('2d');
+            charts[location] = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: 'Bodenfeuchtigkeit (%)',
+                            data: [],
+                            borderColor: 'green',
+                            backgroundColor: 'rgba(0, 255, 0, 0.1)',
+                            fill: true,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'Temperatur (°C)',
+                            data: [],
+                            borderColor: 'red',
+                            backgroundColor: 'rgba(255, 0, 0, 0.1)',
+                            fill: true,
+                            yAxisID: 'y1'
+                        },
+                        {
+                            label: 'Luftfeuchtigkeit (%)',
+                            data: [],
+                            borderColor: 'blue',
+                            backgroundColor: 'rgba(0, 0, 255, 0.1)',
+                            fill: true,
+                            yAxisID: 'y2'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    stacked: false,
+                    plugins: {
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false
+                        },
+                        title: {
+                            display: true,
+                            text: 'Sensor Daten - ' + location.charAt(0).toUpperCase() + location.slice(1)
+                        }
+                    },
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: {
+                                unit: 'minute',
+                                displayFormats: {
+                                    minute: 'HH:mm'
+                                }
+                            },
+                            title: {
+                                display: true,
+                                text: 'Zeit'
+                            }
+                        },
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: {
+                                display: true,
+                                text: 'Bodenfeuchtigkeit (%)'
+                            }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: {
+                                display: true,
+                                text: 'Temperatur (°C)'
+                            },
+                            grid: {
+                                drawOnChartArea: false
+                            }
+                        },
+                        y2: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: {
+                                display: true,
+                                text: 'Luftfeuchtigkeit (%)'
+                            },
+                            grid: {
+                                drawOnChartArea: false
+                            },
+                            ticks: {
+                                beginAtZero: true
+                            }
+                        }
+                    }
+                }
+            });
+
+            dataStore[location] = {
+                soil_moisture: [],
+                temperature: [],
+                humidity: []
+            };
+
+            currentData[location] = {
+                soil_moisture: null,
+                temperature: null,
+                humidity: null
+            };
+        }
+
+        function updateStats(location) {
+            const statsElement = document.getElementById('stats_' + location);
+            const soilData = dataStore[location].soil_moisture;
+            const tempData = dataStore[location].temperature;
+            const humData = dataStore[location].humidity;
+
+            if (soilData.length === 0 || tempData.length === 0 || humData.length === 0) {
+                statsElement.innerHTML = '<p>Noch keine Daten verfügbar.</p>';
+                return;
+            }
+
+            // Bodenfeuchtigkeit Stats
+            const soilAvg = (soilData.reduce((a, b) => a + b, 0) / soilData.length).toFixed(1);
+            const soilMin = Math.min(...soilData).toFixed(1);
+            const soilMax = Math.max(...soilData).toFixed(1);
+
+            // Temperatur Stats
+            const tempAvg = (tempData.reduce((a, b) => a + b, 0) / tempData.length).toFixed(1);
+            const tempMin = Math.min(...tempData).toFixed(1);
+            const tempMax = Math.max(...tempData).toFixed(1);
+
+            // Luftfeuchtigkeit Stats
+            const humAvg = (humData.reduce((a, b) => a + b, 0) / humData.length).toFixed(1);
+            const humMin = Math.min(...humData).toFixed(1);
+            const humMax = Math.max(...humData).toFixed(1);
+
+            statsElement.innerHTML = `
+                <h5>Statistiken</h5>
+                <p><strong>Bodenfeuchtigkeit (%):</strong> Durchschnitt: ${soilAvg}, Min: ${soilMin}, Max: ${soilMax}</p>
+                <p><strong>Temperatur (°C):</strong> Durchschnitt: ${tempAvg}, Min: ${tempMin}, Max: ${tempMax}</p>
+                <p><strong>Luftfeuchtigkeit (%):</strong> Durchschnitt: ${humAvg}, Min: ${humMin}, Max: ${humMax}</p>
+            `;
+        }
+
+        function updateCurrentDataDisplay(location) {
+            if (currentData[location]) {
+                const soilMoisture = currentData[location].soil_moisture;
+                const temperature = currentData[location].temperature;
+                const humidity = currentData[location].humidity;
+
+                document.getElementById('current_soil_' + location).innerText = soilMoisture !== null ? soilMoisture.toFixed(1) : '-';
+                document.getElementById('current_temp_' + location).innerText = temperature !== null ? temperature.toFixed(1) : '-';
+                document.getElementById('current_humidity_' + location).innerText = humidity !== null ? humidity.toFixed(1) : '-';
+
+                // Zustandsanzeige aktualisieren
+                updateStatusIndicators(location, soilMoisture, temperature, humidity);
+            }
+        }
+
+        function updateStatusIndicators(location, soilMoisture, temperature, humidity) {
+            // Holen der Schwellenwerte für die Pflanze
+            const plantThresholds = thresholds[location];
+
+            if (!plantThresholds) {
+                console.warn('Schwellenwerte für', location, 'nicht verfügbar.');
+                return;
+            }
+
+            // Bodenfeuchtigkeit
+            const soilStatus = document.getElementById('soil_status_' + location);
+            const soilRecommendation = document.getElementById('recommendation_' + location);
+            const soilOptimal = plantThresholds.soil_moisture.optimal;
+
+            if (soilMoisture < soilOptimal[0]) {
+                soilStatus.innerText = ' (Niedrig)';
+                soilStatus.className = 'alert-indicator danger';
+                soilRecommendation.innerText = 'Empfehlung: Pflanze gießen.';
+            } else if (soilMoisture > soilOptimal[1]) {
+                soilStatus.innerText = ' (Hoch)';
+                soilStatus.className = 'alert-indicator warning';
+                soilRecommendation.innerText = 'Empfehlung: Nicht gießen.';
+            } else {
+                soilStatus.innerText = ' (Optimal)';
+                soilStatus.className = 'alert-indicator optimal';
+                soilRecommendation.innerText = '';
+            }
+
+            // Temperatur
+            const tempStatus = document.getElementById('temp_status_' + location);
+            const tempOptimal = plantThresholds.temperature.optimal;
+
+            if (temperature < tempOptimal[0]) {
+                tempStatus.innerText = ' (Kalt)';
+                tempStatus.className = 'alert-indicator warning';
+            } else if (temperature > tempOptimal[1]) {
+                tempStatus.innerText = ' (Heiß)';
+                tempStatus.className = 'alert-indicator warning';
+            } else {
+                tempStatus.innerText = ' (Optimal)';
+                tempStatus.className = 'alert-indicator optimal';
+            }
+
+            // Luftfeuchtigkeit
+            const humidityStatus = document.getElementById('humidity_status_' + location);
+            const humidityOptimal = plantThresholds.humidity.optimal;
+
+            if (humidity < humidityOptimal[0]) {
+                humidityStatus.innerText = ' (Niedrig)';
+                humidityStatus.className = 'alert-indicator warning';
+            } else if (humidity > humidityOptimal[1]) {
+                humidityStatus.innerText = ' (Hoch)';
+                humidityStatus.className = 'alert-indicator warning';
+            } else {
+                humidityStatus.innerText = ' (Optimal)';
+                humidityStatus.className = 'alert-indicator optimal';
+            }
+        }
+
+        function loadHistoricalData(location) {
+            fetch('/get_data/' + location)
+                .then(response => response.json())
+                .then(data => {
+                    if (Array.isArray(data) && data.length > 0) {
+                        data.forEach(entry => {
+                            var timestamp = DateTime.fromISO(entry.timestamp).toJSDate();
+                            charts[location].data.labels.push(timestamp);
+                            charts[location].data.datasets[0].data.push(entry.soil_moisture);
+                            charts[location].data.datasets[1].data.push(entry.temperature);
+                            charts[location].data.datasets[2].data.push(entry.humidity);
+
+                            // Daten für Statistiken speichern
+                            dataStore[location].soil_moisture.push(entry.soil_moisture);
+                            dataStore[location].temperature.push(entry.temperature);
+                            dataStore[location].humidity.push(entry.humidity);
+                        });
+                        charts[location].update();
+                        updateStats(location);
+
+                        // Setze die aktuellen Daten auf den letzten Eintrag
+                        const lastEntry = data[data.length - 1];
+                        currentData[location] = {
+                            soil_moisture: lastEntry.soil_moisture,
+                            temperature: lastEntry.temperature,
+                            humidity: lastEntry.humidity
+                        };
+                        updateCurrentDataDisplay(location);
+                    } else {
+                        console.warn('Keine historischen Daten für', location);
+                    }
+                })
+                .catch(error => {
+                    console.error('Fehler beim Laden der historischen Daten für', location, error);
+                });
+        }
+
+        function loadThresholds() {
+            return fetch('/get_thresholds')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Serverantwort für Schwellenwerte:', data);
+                    if (data.status === 'success' && data.thresholds) {
+                        thresholds = data.thresholds;
+                        console.log('Schwellenwerte geladen:', thresholds);
+                    } else {
+                        console.error('Ungültige Serverantwort für Schwellenwerte:', data);
+                    }
+                })
+                .catch(error => {
+                    console.error('Fehler beim Laden der Schwellenwerte:', error);
+                });
+        }
+
+        function openThresholdModal(location) {
+            const plantThresholds = thresholds[location];
+            if (!plantThresholds) {
+                alert('Schwellenwerte für diese Pflanze sind nicht verfügbar.');
+                console.warn('Schwellenwerte für die Pflanze', location, 'sind nicht definiert.');
+                return;
+            }
+            document.getElementById('thresholdLocation').value = location;
+            document.getElementById('thresholdModalLabel').innerText = `Schwellenwerte einstellen - ${location.charAt(0).toUpperCase() + location.slice(1)}`;
+
+            // Bodenfeuchtigkeit
+            document.getElementById('soil_optimal_min').value = plantThresholds.soil_moisture.optimal[0];
+            document.getElementById('soil_optimal_max').value = plantThresholds.soil_moisture.optimal[1];
+            // Temperatur
+            document.getElementById('temp_optimal_min').value = plantThresholds.temperature.optimal[0];
+            document.getElementById('temp_optimal_max').value = plantThresholds.temperature.optimal[1];
+            // Luftfeuchtigkeit
+            document.getElementById('humidity_optimal_min').value = plantThresholds.humidity.optimal[0];
+            document.getElementById('humidity_optimal_max').value = plantThresholds.humidity.optimal[1];
+
+            // Öffne das Modal
+            var thresholdModal = new bootstrap.Modal(document.getElementById('thresholdModal'));
+            thresholdModal.show();
+        }
+
+        function saveThresholds() {
+            const location = document.getElementById('thresholdLocation').value;
+
+            const newThresholds = {
+                soil_moisture: {
+                    optimal: [
+                        parseFloat(document.getElementById('soil_optimal_min').value),
+                        parseFloat(document.getElementById('soil_optimal_max').value)
+                    ]
+                },
+                temperature: {
+                    optimal: [
+                        parseFloat(document.getElementById('temp_optimal_min').value),
+                        parseFloat(document.getElementById('temp_optimal_max').value)
+                    ]
+                },
+                humidity: {
+                    optimal: [
+                        parseFloat(document.getElementById('humidity_optimal_min').value),
+                        parseFloat(document.getElementById('humidity_optimal_max').value)
+                    ]
+                }
+            };
+
+            // Validierung der Eingabewerte
+            if (
+                isNaN(newThresholds.soil_moisture.optimal[0]) ||
+                isNaN(newThresholds.soil_moisture.optimal[1]) ||
+                isNaN(newThresholds.temperature.optimal[0]) ||
+                isNaN(newThresholds.temperature.optimal[1]) ||
+                isNaN(newThresholds.humidity.optimal[0]) ||
+                isNaN(newThresholds.humidity.optimal[1])
+            ) {
+                alert('Bitte gib gültige numerische Werte für alle Schwellenbereiche ein.');
+                return;
+            }
+
+            // Sende die neuen Schwellenwerte an den Server
+            fetch('/set_thresholds', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ location: location, thresholds: newThresholds }),
+            })
+            .then(response => response.json())
+            .then(result => {
+                console.log('Serverantwort beim Speichern der Schwellenwerte:', result);
+                if (result.status === 'success') {
+                    if (result.thresholds && result.thresholds[location]) {
+                        // Aktualisiere nur die Schwellenwerte für die spezifische Pflanze
+                        thresholds[location] = result.thresholds[location];
+                        console.log(`Schwellenwerte für ${location} aktualisiert:`, thresholds[location]);
+                    } else if (result.thresholds) {
+                        // Falls der Server nur die Schwellenwerte für die Pflanze zurückgibt
+                        thresholds[location] = result.thresholds;
+                        console.log(`Schwellenwerte für ${location} aktualisiert:`, thresholds[location]);
+                    } else {
+                        console.warn('Serverantwort enthält keine Schwellenwerte für die Pflanze:', location);
+                    }
+
+                    updateCurrentDataDisplay(location);
+                    // Schließe das Modal
+                    var thresholdModal = bootstrap.Modal.getInstance(document.getElementById('thresholdModal'));
+                    thresholdModal.hide();
+                    alert('Schwellenwerte erfolgreich aktualisiert.');
+                } else {
+                    alert('Fehler beim Aktualisieren der Schwellenwerte: ' + (result.message || 'Unbekannter Fehler.'));
+                }
+            })
+            .catch(error => {
+                console.error('Fehler beim Aktualisieren der Schwellenwerte:', error);
+                alert('Ein Fehler ist aufgetreten.');
+            });
+        }
+
+        window.onload = function() {
+            loadCurrentInterval();
+            loadThresholds().then(() => {
+                ['monstera', 'buschkopf', 'andere'].forEach(function(location) {
+                    createChart(location);
+                    loadHistoricalData(location);
+                });
+            });
+        };
+
+        socket.on('connect', function() {
+            console.log('Verbunden mit dem WebSocket-Server');
+        });
+
+        socket.on('new_data', function(data) {
+            console.log('Empfangene Daten:', data);
+            var location = data.location;
+            var timestamp = DateTime.fromISO(data.timestamp).toJSDate();
+
+            if (charts[location]) {
+                charts[location].data.labels.push(timestamp);
+                charts[location].data.datasets[0].data.push(data.soil_moisture);
+                charts[location].data.datasets[1].data.push(data.temperature);
+                charts[location].data.datasets[2].data.push(data.humidity);
+
+                // Daten für Statistiken speichern
+                dataStore[location].soil_moisture.push(data.soil_moisture);
+                dataStore[location].temperature.push(data.temperature);
+                dataStore[location].humidity.push(data.humidity);
+
+                charts[location].update();
+                updateStats(location);
+
+                // Aktuelle Daten aktualisieren
+                currentData[location] = {
+                    soil_moisture: data.soil_moisture,
+                    temperature: data.temperature,
+                    humidity: data.humidity
+                };
+                updateCurrentDataDisplay(location);
+            } else {
+                console.warn('Kein Chart für den Standort gefunden:', location);
+            }
+        });
+
+        socket.on('disconnect', function() {
+            console.log('Vom WebSocket-Server getrennt');
+        });
+
+        // Funktion zum Löschen aller Sensordaten
+        function deleteAllData() {
+            if (!confirm('Möchtest du wirklich alle Sensordaten löschen?')) {
+                return;
+            }
+
+            fetch('/delete_data', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.status === 'success') {
+                    // Alle Charts und Daten leeren
+                    ['monstera', 'buschkopf', 'andere'].forEach(function(location) {
+                        charts[location].data.labels = [];
+                        charts[location].data.datasets.forEach(dataset => {
+                            dataset.data = [];
+                        });
+                        charts[location].update();
+
+                        dataStore[location] = {
+                            soil_moisture: [],
+                            temperature: [],
+                            humidity: []
+                        };
+
+                        currentData[location] = {
+                            soil_moisture: null,
+                            temperature: null,
+                            humidity: null
+                        };
+                        updateStats(location);
+                        updateCurrentDataDisplay(location);
+                    });
+
+                    // Feedback anzeigen
+                    const feedbackElement = document.getElementById('feedback');
+                    feedbackElement.classList.remove('d-none', 'alert-danger');
+                    feedbackElement.classList.add('alert-success');
+                    feedbackElement.innerText = 'Alle Sensordaten wurden erfolgreich gelöscht.';
+                    setTimeout(() => {
+                        feedbackElement.classList.add('d-none');
+                    }, 5000);
+                } else {
+                    alert('Fehler beim Löschen der Daten: ' + result.message);
+                }
+            })
+            .catch(error => {
+                console.error('Fehler beim Löschen der Daten:', error);
+                alert('Ein Fehler ist aufgetreten.');
+            });
+        }
+
+        // Funktion zum Laden des aktuellen Intervalls
+        function loadCurrentInterval() {
+            fetch('/get_interval')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        document.getElementById('currentInterval').innerText = 'Aktuelles Intervall: ' + data.interval + ' Minuten';
+                    } else {
+                        document.getElementById('currentInterval').innerText = 'Aktuelles Intervall: Fehler beim Laden';
+                    }
+                })
+                .catch(error => {
+                    console.error('Fehler beim Laden des aktuellen Intervalls:', error);
+                    document.getElementById('currentInterval').innerText = 'Aktuelles Intervall: Fehler beim Laden';
+                });
+        }
+
+        // Funktion zum Einstellen des Intervalls
+        function setIntervalMinutes() {
+            const intervalInput = document.getElementById('intervalInput').value;
+            const interval = parseInt(intervalInput);
+
+            if (isNaN(interval) || interval < 1) {
+                alert('Bitte gib ein gültiges Intervall von mindestens 1 Minute ein.');
+                return;
+            }
+
+            fetch('/set_interval', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ interval: interval }),
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.status === 'success') {
+                    document.getElementById('feedback').classList.remove('d-none', 'alert-danger');
+                    document.getElementById('feedback').classList.add('alert-success');
+                    document.getElementById('feedback').innerText = `Intervall erfolgreich auf ${interval} Minuten gesetzt.`;
+                    document.getElementById('currentInterval').innerText = 'Aktuelles Intervall: ' + interval + ' Minuten';
+                    setTimeout(() => {
+                        document.getElementById('feedback').classList.add('d-none');
+                    }, 5000);
+                } else {
+                    alert('Fehler beim Einstellen des Intervalls: ' + (result.message || 'Unbekannter Fehler.'));
+                }
+            })
+            .catch(error => {
+                console.error('Fehler beim Einstellen des Intervalls:', error);
+                alert('Ein Fehler ist aufgetreten.');
+            });
+        }
+
+        // Event-Listener für den Intervall-Einstellungs-Button
+        document.getElementById('setIntervalButton').addEventListener('click', setIntervalMinutes);
+
+        // Event-Listener für den Löschen-Button
+        document.getElementById('deleteDataButton').addEventListener('click', deleteAllData);
+
+    </script>
+</body>
+</html>
