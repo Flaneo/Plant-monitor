@@ -33,15 +33,20 @@ Open Arduino IDE.
 Go to Sketch > Include Library > Manage Libraries.
 Install the following libraries:
 > ArduinoJson by Benoit Blanchon
+>
 > NTPClient by Fabrice Weinberg
+>
 > DHT20 by Emerson F. S.
+>
 > ArduinoOTA (usually included with ESP8266 boards)
+>
 > EEPROM (usually included with Arduino IDE)
 
 - **Configure the following in the script:**
 
 WiFi Credentials:
 > const char* ssid = "Your_WiFi_SSID";
+>
 > const char* password = "Your_WiFi_Password";
 - Server Configuration:
 
@@ -51,16 +56,25 @@ WiFi Credentials:
 
 Select the plat by commenting out if removing the comment flag for the following:
 > // Standort des Sensors (Pflanze)
+>
 > // Für "Monstera"
+>
 > const char* location = "monstera";
+>
 > IPAddress local_IP(192, 168, 2, 201); // IP-Adresse für den Monstera ESP
+>
 > 
+>
 > // Für "andere"
+>
 > //const char* location = "andere";
+>
 > //IPAddress local_IP(192, 168, 2, 202); // IP-Adresse für den "andere" ESP
-> 
+>
 > // Für "Buschkopf"
-> //const char* location = "buschkopf";
+>
+>  //const char* location = "buschkopf";
+>
 > //IPAddress local_IP(192, 168, 2, 203); // IP-Adresse für den Buschkopf ESP
 
 - **Upload the script to your NodeMCU and start the calibration the Soil moisture sensor by typing "ENTER CALIBRATION MODE" in the Serial Monitor.**
@@ -85,23 +99,36 @@ To ensure the server starts on boot:
 1. Add the following content:
 
 > [Unit]
+>
+> 
 > Description=Plant Monitoring Server
+>
 > After=network.target
 > 
 > [Service]
+>
+> 
 > ExecStart=/usr/bin/python3 /home/pi/plant-monitoring-system/server.py
+>
 > WorkingDirectory=/home/pi/plant-monitoring-system/
+>
 > StandardOutput=inherit
+>
 > StandardError=inherit
+>
 > Restart=always
+>
 > User=pi
 > 
 > [Install]
+>
+> 
 > WantedBy=multi-user.target
 - **Note**: Adjust the paths if your project is located elsewhere.
 1. Enable and start the service:
 
 > sudo systemctl enable plant-monitor.service
+>
 > sudo systemctl start plant-monitor.service
 1. Check the status:
 
