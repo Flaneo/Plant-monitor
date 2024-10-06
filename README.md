@@ -81,6 +81,7 @@ Select the plat by commenting out if removing the comment flag for the following
 
 
 - **Clone Repository to Raspberry Pi**
+You only need server.py and /templates/index.html. The rest is created automatically.
 
 
 - **Install the required Python packages:**
