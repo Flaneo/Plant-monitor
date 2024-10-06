@@ -2,8 +2,6 @@
 
 This project is designed to monitor environmental conditions for plants using an ESP8266 microcontroller. The system collects data on soil moisture, temperature, and humidity from the DHT20 and soil moisture sensors. The data is sent to a Raspberry Pi server via WiFi, where it is processed and visualized through a web dashboard.
 
-In this Repo it only supports monitoring of 3 Plants but it is easily extendable.
-
 ### Features:
 - **Real-time monitoring** of soil moisture, temperature, and humidity for multiple plants.
 - **Calibration mode** for soil moisture sensor to ensure accurate readings for different soil types.
@@ -49,7 +47,26 @@ WiFi Credentials:
 
 > const char* host = "Your_Raspberry_Pi_IP"; // e.g., "192.168.2.40"
 
-- **Clone Repository**
+- **Plant selection**
+
+Select the plat by commenting out if removing the comment flag for the following:
+> // Standort des Sensors (Pflanze)
+> // Für "Monstera"
+> const char* location = "monstera";
+> IPAddress local_IP(192, 168, 2, 201); // IP-Adresse für den Monstera ESP
+> 
+> // Für "andere"
+> //const char* location = "andere";
+> //IPAddress local_IP(192, 168, 2, 202); // IP-Adresse für den "andere" ESP
+> 
+> // Für "Buschkopf"
+> //const char* location = "buschkopf";
+> //IPAddress local_IP(192, 168, 2, 203); // IP-Adresse für den Buschkopf ESP
+
+- **Upload the script to your NodeMCU and start the calibration the Soil moisture sensor by typing "ENTER CALIBRATION MODE" in the Serial Monitor.**
+
+
+- **Clone Repository to Raspberry Pi**
 
 
 - **Install the required Python packages:**
