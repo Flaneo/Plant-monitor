@@ -2,6 +2,8 @@
 
 This project is designed to monitor environmental conditions for plants using an ESP8266 microcontroller. The system collects data on soil moisture, temperature, and humidity from the DHT20 and soil moisture sensors. The data is sent to a Raspberry Pi server via WiFi, where it is processed and visualized through a web dashboard.
 
+In this Repo it only supports monitoring of 3 Plants but it is easily extendable.
+
 ### Features:
 - **Real-time monitoring** of soil moisture, temperature, and humidity for multiple plants.
 - **Calibration mode** for soil moisture sensor to ensure accurate readings for different soil types.
