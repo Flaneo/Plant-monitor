@@ -14,7 +14,7 @@ const char* ssid = "Your-Wifi-SSID";          // Dein WiFi-SSID
 const char* password = "Your-Wifi-Password";  // Dein WiFi-Passwort
 
 // Server Konfiguration
-const char* host = "192.168.2.40"; // IP-Adresse des Raspberry Pi
+const char* host = "Your_Raspi_IPV4"; // IP-Adresse des Raspberry Pi
 const int port = 5000;             // Port der Flask-App
 const char* dataEndpoint = "/api/data"; // Endpoint für Daten
 const char* intervalEndpoint = "/api/get_interval"; // Endpoint für Intervall
