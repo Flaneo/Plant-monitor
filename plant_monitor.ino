@@ -10,8 +10,8 @@
 #include <EEPROM.h>
 
 // WiFi Konfiguration
-const char* ssid = "MagentaWLAN-E38C";          // Dein WiFi-SSID
-const char* password = "93515246204969428314";  // Dein WiFi-Passwort
+const char* ssid = "Your-Wifi-SSID";          // Dein WiFi-SSID
+const char* password = "Your-Wifi-Password";  // Dein WiFi-Passwort
 
 // Server Konfiguration
 const char* host = "192.168.2.40"; // IP-Adresse des Raspberry Pi
