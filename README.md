@@ -19,7 +19,6 @@ This project is designed to monitor environmental conditions for plants using an
 
 
 
-
 # **Installation:**
 
 - **Set up your Raspberry Pi and connect it to your WiFi.**
