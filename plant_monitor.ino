@@ -1,5 +1,3 @@
-// plant_monitor.ino
-
 #include <ESP8266WiFi.h>
 #include <ArduinoJson.h>
 #include <NTPClient.h>
@@ -10,14 +8,15 @@
 #include <EEPROM.h>
 
 // WiFi Konfiguration
-const char* ssid = "Your-Wifi-SSID";          // Dein WiFi-SSID
-const char* password = "Your-Wifi-Password";  // Dein WiFi-Passwort
+const char* ssid = "Wifi-SSID";          // Dein WiFi-SSID
+const char* password = "Wifi-Password";  // Dein WiFi-Passwort
 
 // Server Konfiguration
-const char* host = "Your_Raspi_IPV4"; // IP-Adresse des Raspberry Pi
+const char* host = "Fixed Raspi IPv4"; // IP-Adresse des Raspberry Pi
 const int port = 5000;             // Port der Flask-App
 const char* dataEndpoint = "/api/data"; // Endpoint für Daten
-const char* intervalEndpoint = "/api/get_interval"; // Endpoint für Intervall
+const char* intervalEndpoint = "/get_interval"; // Endpoint für Intervall
+const char* logEndpoint = "/api/logs"; // Endpoint für Logs
 
 // Bodenfeuchtesensor
 const int soilMoisturePin = A0; // Analog-Pin für Bodenfeuchtesensor
@@ -80,38 +79,45 @@ void setUpOverTheAirProgramming();
 void loadCalibration();
 void saveCalibration();
 void testSensors(); // Neue Funktion für den "TEST" Befehl
+void sendStartupLogs(); // Neue Funktion zum Senden der Startup-Logs
+String getTimestamp(); // Funktion zum Abrufen des Zeitstempels
+
+// Globale Variable zum Speichern der Startup-Logs
+String startupLogs = "";
+
+// Flag, um zu prüfen, ob Logs gesendet wurden
+bool logsSent = false;
 
 void setup() {
   Serial.begin(115200);
   delay(10);
-  Serial.println("----- Plant Monitor Start -----");
 
   // Initialisiere EEPROM
   EEPROM.begin(EEPROM_SIZE);
   loadCalibration();
 
-  Serial.print("Kalibrierungswerte geladen - airValue: ");
-  Serial.print(airValue);
-  Serial.print(", waterValue: ");
-  Serial.println(waterValue);
+  // Verbinde mit WiFi
+  Serial.println("");
+  Serial.println("");
+  logPrintln("----- Plant Monitor Start -----");
+  
+  logPrintln("Kalibrierungswerte geladen:");
+  logPrint("airValue: ");
+  logPrintln(airValue);
+  logPrint("waterValue: ");
+  logPrintln(waterValue);
 
   // Statische IP-Konfiguration
   if (!WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS)) {
-    Serial.println("Statische IP-Konfiguration fehlgeschlagen.");
+    logPrintln("Statische IP-Konfiguration fehlgeschlagen.");
   } else {
-    Serial.println("Statische IP-Konfiguration erfolgreich.");
-    Serial.print("Statische IP: ");
-    Serial.println(WiFi.localIP());
+    logPrint("Statische IP-Konfiguration erfolgreich. IP-Adresse: ");
+    logPrintln(WiFi.localIP());
   }
 
-  // Verbinde mit WiFi
-  Serial.println();
-  Serial.println();
-  Serial.print("Verbinde mit WiFi: ");
-  Serial.println(ssid);
-
+  logPrint("Verbinde mit WiFi: ");
+  logPrintln(ssid);
   WiFi.begin(ssid, password);
-  Serial.println("WiFi-Verbindungsversuch gestartet...");
 
   // Warte auf Verbindung
   unsigned long startAttemptTime = millis();
@@ -123,48 +129,62 @@ void setup() {
   }
 
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("");
-    Serial.println("WiFi verbunden");
-    Serial.print("Verbundene SSID: ");
-    Serial.println(WiFi.SSID());
-    Serial.print("IP Adresse: ");
-    Serial.println(WiFi.localIP());
+    logPrintln("");
+    logPrintln("WiFi verbunden");
+    logPrint("Verbundene SSID: ");
+    logPrintln(WiFi.SSID());
+    logPrint("IP Adresse: ");
+    logPrintln(WiFi.localIP());
   } else {
-    Serial.println("");
-    Serial.println("WiFi Verbindung fehlgeschlagen!");
+    logPrintln("");
+    logPrintln("WiFi Verbindung fehlgeschlagen!");
   }
 
   setUpOverTheAirProgramming();
 
   // Starte den NTP Client
   timeClient.begin();
-  Serial.println("NTP Client gestartet.");
+  logPrintln("NTP Client gestartet.");
+
+  // Synchronisiere Zeit
+  logPrintln("Synchronisiere Zeit mit NTP Server...");
+  int attempts = 0;
+  while (!timeClient.update() && attempts < 5) {
+    attempts++;
+    logPrintln("Zeit konnte nicht synchronisiert werden. Neuer Versuch...");
+    delay(1000);
+  }
+  if (timeClient.isTimeSet()) {
+    logPrintln("Zeit erfolgreich synchronisiert.");
+  } else {
+    logPrintln("Zeit konnte nach mehreren Versuchen nicht synchronisiert werden.");
+  }
 
   // Initialisiere den DHT20 Sensor
   Wire.begin();
-  Serial.println("Initialisiere DHT20 Sensor...");
+  logPrintln("Initialisiere DHT20 Sensor...");
   if (!dht20.begin()) {
-    Serial.println("DHT20 Sensor nicht gefunden. Bitte überprüfe die Verbindung!");
+    logPrintln("DHT20 Sensor nicht gefunden. Bitte überprüfe die Verbindung!");
   } else {
-    Serial.println("DHT20 Sensor erfolgreich initialisiert.");
+    logPrintln("DHT20 Sensor erfolgreich initialisiert.");
   }
 
   // Initiales Abrufen des Intervalls
-  Serial.println("Rufe initiales Messintervall ab...");
+  logPrintln("Rufe initiales Messintervall ab...");
   updateInterval();
 
   // Initiale Sensorwerte auslesen und ausgeben
-  Serial.println("Lese initiale Sensorwerte...");
+  logPrintln("Lese initiale Sensorwerte...");
   int initialSoilMoistureValue = analogRead(soilMoisturePin);
-  Serial.print("Initialer Rohwert Bodenfeuchte (analogRead): ");
-  Serial.println(initialSoilMoistureValue);
+  logPrint("Initialer Rohwert Bodenfeuchte (analogRead): ");
+  logPrintln(initialSoilMoistureValue);
 
   float initialSoilMoisturePercent = calculateSoilMoisture(initialSoilMoistureValue);
-  Serial.print("Initiale Bodenfeuchte: ");
-  Serial.print(initialSoilMoisturePercent);
-  Serial.println(" %");
+  logPrint("Initiale Bodenfeuchte: ");
+  logPrint(initialSoilMoisturePercent);
+  logPrintln(" %");
 
-  Serial.println("Lese initiale DHT20 Sensorwerte...");
+  logPrintln("Lese initiale DHT20 Sensorwerte...");
   int initialStatus = dht20.read();
   float initialTemperature = 0;
   float initialHumidity = 0;
@@ -177,36 +197,41 @@ void setup() {
     initialTemperature = round(initialTemperature * 10) / 10.0;
     initialHumidity = round(initialHumidity * 10) / 10.0;
 
-    Serial.print("Standort: ");
-    Serial.println(location);
-    Serial.print("Bodenfeuchte Wert: ");
-    Serial.print(initialSoilMoistureValue);
-    Serial.print(" | Bodenfeuchte: ");
-    Serial.print(initialSoilMoisturePercent);
-    Serial.print(" % | Temperatur: ");
-    Serial.print(initialTemperature);
-    Serial.print(" °C | Luftfeuchtigkeit: ");
-    Serial.print(initialHumidity);
-    Serial.println(" %");
+    logPrint("Standort: ");
+    logPrintln(location);
+    logPrint("Bodenfeuchte Wert: ");
+    logPrint(initialSoilMoistureValue);
+    logPrint(" | Bodenfeuchte: ");
+    logPrint(initialSoilMoisturePercent);
+    logPrint(" % | Temperatur: ");
+    logPrint(initialTemperature);
+    logPrint(" °C | Luftfeuchtigkeit: ");
+    logPrint(initialHumidity);
+    logPrintln(" %");
   } else {
-    Serial.print("Initialer DHT20 Fehler: ");
-    Serial.println(initialStatus);
+    logPrint("Initialer DHT20 Fehler: ");
+    logPrintln(initialStatus);
   }
 
-  Serial.println("----- Setup abgeschlossen -----\n");
+  logPrintln("----- Setup abgeschlossen -----\n");
 
   // Übersicht der verfügbaren Befehle anzeigen
-  Serial.println("----- Verfügbare Befehle -----");
-  Serial.println("Normaler Modus:");
-  Serial.println("  ENTER CALIBRATION MODE - Betritt den Kalibrierungsmodus.");
-  Serial.println("  TEST - Gibt alle aktuellen Sensorwerte aus.");
-  Serial.println("\nKalibrierungsmodus:");
-  Serial.println("  CALIBRATE DRY - Setzt den aktuellen Sensorwert als trockenen Zustand.");
-  Serial.println("  CALIBRATE WET - Setzt den aktuellen Sensorwert als nassen Zustand.");
-  Serial.println("  SHOW CALIBRATION - Zeigt die aktuellen Kalibrierungswerte an.");
-  Serial.println("  RESET CALIBRATION - Setzt die Kalibrierungswerte auf Standard.");
-  Serial.println("  EXIT CALIBRATION MODE - Verlässt den Kalibrierungsmodus.");
-  Serial.println("--------------------------------\n");
+  logPrintln("----- Verfügbare Befehle -----");
+  logPrintln("Normaler Modus:");
+  logPrintln("  ENTER CALIBRATION MODE - Betritt den Kalibrierungsmodus.");
+  logPrintln("  TEST - Gibt alle aktuellen Sensorwerte aus.");
+  logPrintln("\nKalibrierungsmodus:");
+  logPrintln("  CALIBRATE DRY - Setzt den aktuellen Sensorwert als trockenen Zustand.");
+  logPrintln("  CALIBRATE WET - Setzt den aktuellen Sensorwert als nassen Zustand.");
+  logPrintln("  SHOW CALIBRATION - Zeigt die aktuellen Kalibrierungswerte an.");
+  logPrintln("  RESET CALIBRATION - Setzt die Kalibrierungswerte auf Standard.");
+  logPrintln("  EXIT CALIBRATION MODE - Verlässt den Kalibrierungsmodus.");
+  logPrintln("--------------------------------\n");
+
+  // Sende die Startup-Logs an den Server
+  sendStartupLogs();
+
+  logsSent = true; // Sicherstellen, dass die Logs nur einmal gesendet werden
 }
 
 void loop() {
@@ -290,6 +315,123 @@ void loop() {
   }
 }
 
+// Hilfsfunktionen zum Loggen und Ausgeben mit Zeitstempel
+String getTimestamp() {
+  String timestamp = "";
+  if (timeClient.isTimeSet()) {
+    unsigned long epochTime = timeClient.getEpochTime();
+    int year, month, day, hour, minute, second;
+    getDateTime(epochTime, year, month, day, hour, minute, second);
+    char buffer[30];
+    sprintf(buffer, "[%02d:%02d:%02d] ", hour, minute, second);
+    timestamp = String(buffer);
+  } else {
+    timestamp = "[--:--:--] ";
+  }
+  return timestamp;
+}
+
+void logPrint(String message) {
+  String timestamp = getTimestamp();
+  Serial.print(timestamp + message);
+  startupLogs += timestamp + message;
+}
+
+void logPrintln(String message) {
+  String timestamp = getTimestamp();
+  Serial.println(timestamp + message);
+  startupLogs += timestamp + message + "\n";
+}
+
+void logPrint(int value) {
+  String timestamp = getTimestamp();
+  Serial.print(timestamp + String(value));
+  startupLogs += timestamp + String(value);
+}
+
+void logPrintln(int value) {
+  String timestamp = getTimestamp();
+  Serial.println(timestamp + String(value));
+  startupLogs += timestamp + String(value) + "\n";
+}
+
+void logPrint(float value) {
+  String timestamp = getTimestamp();
+  Serial.print(timestamp + String(value));
+  startupLogs += timestamp + String(value);
+}
+
+void logPrintln(float value) {
+  String timestamp = getTimestamp();
+  Serial.println(timestamp + String(value));
+  startupLogs += timestamp + String(value) + "\n";
+}
+
+void logPrint(IPAddress ip) {
+  String timestamp = getTimestamp();
+  Serial.print(timestamp + ip.toString());
+  startupLogs += timestamp + ip.toString();
+}
+
+void logPrintln(IPAddress ip) {
+  String timestamp = getTimestamp();
+  Serial.println(timestamp + ip.toString());
+  startupLogs += timestamp + ip.toString() + "\n";
+}
+
+// Funktion zum Senden der Startup-Logs an den Server
+void sendStartupLogs() {
+  WiFiClient client;
+  Serial.print("Sende Startup-Logs an den Server: ");
+  Serial.println(host);
+
+  if (!client.connect(host, port)) {
+    Serial.println("Verbindung zum Server fehlgeschlagen");
+    return;
+  }
+
+  Serial.println("Verbindung erfolgreich hergestellt.");
+
+  // Erstelle JSON-Daten
+  StaticJsonDocument<8192> doc; // Größerer Puffer für umfangreiche Logs
+  doc["location"] = location;
+  doc["logs"] = startupLogs;
+
+  String jsonData;
+  serializeJson(doc, jsonData);
+
+  Serial.print("JSON Daten, die gesendet werden: ");
+  Serial.println(jsonData);
+
+  // Sende HTTP POST Anfrage
+  client.println(String("POST ") + logEndpoint + " HTTP/1.1");
+  client.println(String("Host: ") + host);
+  client.println("Content-Type: application/json");
+  client.print("Content-Length: ");
+  client.println(jsonData.length());
+  client.println();
+  client.println(jsonData);
+
+  // Warte auf Antwort
+  Serial.println("Warte auf Antwort vom Server...");
+  while (client.connected()) {
+    String line = client.readStringUntil('\n');
+    if (line == "\r") {
+      break;
+    }
+  }
+
+  // Lese die Antwort des Servers
+  String response = client.readString();
+  Serial.println("Antwort vom Server:");
+  Serial.println(response);
+
+  client.stop();
+  Serial.println("Verbindung zum Server geschlossen.");
+}
+
+// Restlicher Code bleibt unverändert...
+
 // Funktion zur Handhabung von seriellen Befehlen für die Kalibrierung und TEST
 void handleSerialCommands() {
   if (Serial.available() > 0) {
@@ -338,7 +480,8 @@ void handleSerialCommands() {
   }
 }
 
-// Funktion zur Kalibrierung des Bodenfeuchtigkeitssensors im trockenen Zustand
+// Restliche Funktionen wie calibrateDry(), calibrateWet(), etc.
+
 void calibrateDry() {
   int sensorValue = analogRead(soilMoisturePin);
   airValue = sensorValue;
@@ -347,7 +490,6 @@ void calibrateDry() {
   saveCalibration();
 }
 
-// Funktion zur Kalibrierung des Bodenfeuchtigkeitssensors im nassen Zustand
 void calibrateWet() {
   int sensorValue = analogRead(soilMoisturePin);
   waterValue = sensorValue;
@@ -356,7 +498,6 @@ void calibrateWet() {
   saveCalibration();
 }
 
-// Funktion zur Anzeige der aktuellen Kalibrierungswerte
 void showCalibration() {
   Serial.print("Aktuelle Kalibrierungswerte - airValue: ");
   Serial.print(airValue);
@@ -364,7 +505,6 @@ void showCalibration() {
   Serial.println(waterValue);
 }
 
-// Funktion zur Rücksetzung der Kalibrierungswerte auf Standardwerte
 void resetCalibration() {
   airValue = 1023;
   waterValue = 0;
@@ -372,7 +512,6 @@ void resetCalibration() {
   saveCalibration();
 }
 
-// Funktion zur Eingabe in den Kalibrierungsmodus
 void enterCalibrationMode() {
   calibrationMode = true;
   Serial.println("----- Kalibrierungsmodus gestartet -----");
@@ -383,7 +522,6 @@ void enterCalibrationMode() {
   Serial.println("Gib 'EXIT CALIBRATION MODE' ein, um den Kalibrierungsmodus zu verlassen.");
 }
 
-// Funktion zur Verlassen des Kalibrierungsmodus
 void exitCalibrationMode() {
   calibrationMode = false;
   Serial.println("----- Kalibrierungsmodus beendet -----");
@@ -546,11 +684,21 @@ void updateInterval() {
     StaticJsonDocument<128> doc;
     DeserializationError error = deserializeJson(doc, response);
     if (!error) {
-      int intervalMinutes = doc["interval"];
-      intervalMillis = intervalMinutes * 60000UL;
-      Serial.print("Neues Intervall gesetzt: ");
-      Serial.print(intervalMinutes);
-      Serial.println(" Minuten");
+      if (doc.containsKey("interval")) {
+        int intervalMinutes = doc["interval"];
+        intervalMillis = intervalMinutes * 60000UL;
+        Serial.print("Neues Intervall gesetzt: ");
+        Serial.print(intervalMinutes);
+        Serial.println(" Minuten");
+      } else if (doc.containsKey("status") && doc["status"] == "success") {
+        int intervalMinutes = doc["interval"];
+        intervalMillis = intervalMinutes * 60000UL;
+        Serial.print("Neues Intervall gesetzt: ");
+        Serial.print(intervalMinutes);
+        Serial.println(" Minuten");
+      } else {
+        Serial.println("Antwort des Servers enthält keinen 'interval'-Wert.");
+      }
     } else {
       Serial.print("Fehler beim Parsen des Intervalls: ");
       Serial.println(error.c_str());
