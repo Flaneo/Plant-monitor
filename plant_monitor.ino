@@ -7,26 +7,29 @@
 #include <ArduinoOTA.h>
 #include <EEPROM.h>
 
-// WiFi Konfiguration
-const char* ssid = "Wifi-SSID";          // Dein WiFi-SSID
-const char* password = "Wifi-Password";  // Dein WiFi-Passwort
+// Firmware-Version
+#define FIRMWARE_VERSION "1.0.0"
 
-// Server Konfiguration
-const char* host = "Fixed Raspi IPv4"; // IP-Adresse des Raspberry Pi
+// WiFi-Konfiguration
+const char* ssid = "SSID";          // Dein WiFi-SSID
+const char* password = "Password";  // Dein WiFi-Passwort
+
+// Server-Konfiguration
+const char* host = "Statische IPV4 des Raspberry Pi"; // IP-Adresse des Raspberry Pi
 const int port = 5000;             // Port der Flask-App
-const char* dataEndpoint = "/api/data"; // Endpoint für Daten
+const char* dataEndpoint = "/api/data";       // Endpoint für Daten
 const char* intervalEndpoint = "/get_interval"; // Endpoint für Intervall
-const char* logEndpoint = "/api/logs"; // Endpoint für Logs
+const char* logEndpoint = "/api/logs";         // Endpoint für Logs
 
 // Bodenfeuchtesensor
 const int soilMoisturePin = A0; // Analog-Pin für Bodenfeuchtesensor
 
-// EEPROM Adressen für Kalibrierungswerte
+// EEPROM-Adressen für Kalibrierungswerte
 const int EEPROM_SIZE = 4; // 2 Bytes für airValue, 2 Bytes für waterValue
 const int AIR_VALUE_ADDR = 0;
 const int WATER_VALUE_ADDR = 2;
 
-// Standard Kalibrierungswerte (können angepasst werden)
+// Standard-Kalibrierungswerte (können angepasst werden)
 int airValue = 1023;   // Sensorwert in trockener Erde
 int waterValue = 0;    // Sensorwert in Wasser
 
@@ -37,7 +40,11 @@ DHT20 dht20;
 unsigned long intervalMillis = 60000;
 unsigned long previousMillis = 0;
 
-// NTP Client Setup
+// Sampling-Intervall in Millisekunden (5 Sekunden). Nimmt alle 5 Sekunden eine Probe und berechnet/sendet den Durchschnitt am Ende des Messintervalls.
+const unsigned long samplingInterval = 5000;
+unsigned long previousSampleMillis = 0;
+
+// NTP-Client Setup
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "pool.ntp.org", 7200, 60000); // UTC+2, Aktualisierung alle 60 Sekunden
 
@@ -78,8 +85,8 @@ void updateInterval();
 void setUpOverTheAirProgramming();
 void loadCalibration();
 void saveCalibration();
-void testSensors(); // Neue Funktion für den "TEST" Befehl
-void sendStartupLogs(); // Neue Funktion zum Senden der Startup-Logs
+void testSensors(); // Neue Funktion für den "TEST"-Befehl
+void sendStartupLogs(); // Funktion zum Senden der Startup-Logs
 String getTimestamp(); // Funktion zum Abrufen des Zeitstempels
 
 // Globale Variable zum Speichern der Startup-Logs
@@ -87,6 +94,12 @@ String startupLogs = "";
 
 // Flag, um zu prüfen, ob Logs gesendet wurden
 bool logsSent = false;
+
+// Variablen für die kumulative Datensammlung
+float cumulativeSoilMoisture = 0;
+float cumulativeTemperature = 0;
+float cumulativeHumidity = 0;
+int sampleCount = 0;
 
 void setup() {
   Serial.begin(115200);
@@ -96,11 +109,12 @@ void setup() {
   EEPROM.begin(EEPROM_SIZE);
   loadCalibration();
 
-  // Verbinde mit WiFi
-  Serial.println("");
-  Serial.println("");
+  // Logge Firmware-Version
   logPrintln("----- Plant Monitor Start -----");
-  
+  logPrint("Firmware-Version: ");
+  logPrintln(FIRMWARE_VERSION);
+
+  // Logge Kalibrierungswerte
   logPrintln("Kalibrierungswerte geladen:");
   logPrint("airValue: ");
   logPrintln(airValue);
@@ -111,8 +125,17 @@ void setup() {
   if (!WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS)) {
     logPrintln("Statische IP-Konfiguration fehlgeschlagen.");
   } else {
-    logPrint("Statische IP-Konfiguration erfolgreich. IP-Adresse: ");
+    logPrintln("Statische IP-Konfiguration erfolgreich.");
+    logPrint("IP-Adresse: ");
     logPrintln(WiFi.localIP());
+    logPrint("Gateway: ");
+    logPrintln(WiFi.gatewayIP());
+    logPrint("Subnetzmaske: ");
+    logPrintln(WiFi.subnetMask());
+    logPrint("DNS-Server 1: ");
+    logPrintln(WiFi.dnsIP(0));
+    logPrint("DNS-Server 2: ");
+    logPrintln(WiFi.dnsIP(1));
   }
 
   logPrint("Verbinde mit WiFi: ");
@@ -133,21 +156,34 @@ void setup() {
     logPrintln("WiFi verbunden");
     logPrint("Verbundene SSID: ");
     logPrintln(WiFi.SSID());
-    logPrint("IP Adresse: ");
+    logPrint("IP-Adresse: ");
     logPrintln(WiFi.localIP());
+    logPrint("MAC-Adresse: ");
+    logPrintln(WiFi.macAddress());
+
+    // Signalstärke
+    int32_t rssi = WiFi.RSSI();
+    logPrint("Signalstärke (RSSI): ");
+    logPrint(rssi);
+    logPrintln(" dBm");
   } else {
     logPrintln("");
-    logPrintln("WiFi Verbindung fehlgeschlagen!");
+    logPrintln("WiFi-Verbindung fehlgeschlagen!");
   }
 
   setUpOverTheAirProgramming();
 
-  // Starte den NTP Client
+  // Logge OTA-Hostname
+  String programming_name = String("esp-") + location;
+  logPrint("OTA-Hostname gesetzt auf: ");
+  logPrintln(programming_name);
+
+  // Starte den NTP-Client
   timeClient.begin();
-  logPrintln("NTP Client gestartet.");
+  logPrintln("NTP-Client gestartet.");
 
   // Synchronisiere Zeit
-  logPrintln("Synchronisiere Zeit mit NTP Server...");
+  logPrintln("Synchronisiere Zeit mit NTP-Server...");
   int attempts = 0;
   while (!timeClient.update() && attempts < 5) {
     attempts++;
@@ -156,17 +192,25 @@ void setup() {
   }
   if (timeClient.isTimeSet()) {
     logPrintln("Zeit erfolgreich synchronisiert.");
+    // Aktuelle Zeit ausgeben
+    unsigned long epochTime = timeClient.getEpochTime();
+    int year, month, day, hour, minute, second;
+    getDateTime(epochTime, year, month, day, hour, minute, second);
+    char buffer[30];
+    sprintf(buffer, "%04d-%02d-%02d %02d:%02d:%02d", year, month, day, hour, minute, second);
+    logPrint("Aktuelle Zeit: ");
+    logPrintln(buffer);
   } else {
     logPrintln("Zeit konnte nach mehreren Versuchen nicht synchronisiert werden.");
   }
 
-  // Initialisiere den DHT20 Sensor
+  // Initialisiere den DHT20-Sensor
   Wire.begin();
-  logPrintln("Initialisiere DHT20 Sensor...");
+  logPrintln("Initialisiere DHT20-Sensor...");
   if (!dht20.begin()) {
-    logPrintln("DHT20 Sensor nicht gefunden. Bitte überprüfe die Verbindung!");
+    logPrintln("DHT20-Sensor nicht gefunden. Bitte überprüfe die Verbindung!");
   } else {
-    logPrintln("DHT20 Sensor erfolgreich initialisiert.");
+    logPrintln("DHT20-Sensor erfolgreich initialisiert.");
   }
 
   // Initiales Abrufen des Intervalls
@@ -184,7 +228,7 @@ void setup() {
   logPrint(initialSoilMoisturePercent);
   logPrintln(" %");
 
-  logPrintln("Lese initiale DHT20 Sensorwerte...");
+  logPrintln("Lese initiale DHT20-Sensorwerte...");
   int initialStatus = dht20.read();
   float initialTemperature = 0;
   float initialHumidity = 0;
@@ -209,9 +253,10 @@ void setup() {
     logPrint(initialHumidity);
     logPrintln(" %");
   } else {
-    logPrint("Initialer DHT20 Fehler: ");
+    logPrint("Initialer DHT20-Fehler: ");
     logPrintln(initialStatus);
   }
+
 
   logPrintln("----- Setup abgeschlossen -----\n");
 
@@ -224,7 +269,7 @@ void setup() {
   logPrintln("  CALIBRATE DRY - Setzt den aktuellen Sensorwert als trockenen Zustand.");
   logPrintln("  CALIBRATE WET - Setzt den aktuellen Sensorwert als nassen Zustand.");
   logPrintln("  SHOW CALIBRATION - Zeigt die aktuellen Kalibrierungswerte an.");
-  logPrintln("  RESET CALIBRATION - Setzt die Kalibrierungswerte auf Standard.");
+  logPrintln("  RESET CALIBRATION - Setzt die Kalibrierungswerte zurück.");
   logPrintln("  EXIT CALIBRATION MODE - Verlässt den Kalibrierungsmodus.");
   logPrintln("--------------------------------\n");
 
@@ -243,6 +288,47 @@ void loop() {
   // Überprüfe auf serielle Eingaben für Kalibrierungsbefehle
   handleSerialCommands();
 
+  // Überprüfe, ob es Zeit ist, eine Probe zu nehmen (alle 5 Sekunden)
+  if (currentMillis - previousSampleMillis >= samplingInterval && !calibrationMode) {
+    previousSampleMillis = currentMillis;
+
+    // Lese den Bodenfeuchtesensor
+    int soilMoistureValue = analogRead(soilMoisturePin);
+    float soilMoisturePercent = calculateSoilMoisture(soilMoistureValue);
+
+    // Lese den DHT20-Sensor
+    int status = dht20.read();
+    float temperature = 0;
+    float humidity = 0;
+
+    if (status == DHT20_OK) {
+      temperature = dht20.getTemperature();
+      humidity = dht20.getHumidity();
+
+      // Temperatur und Luftfeuchtigkeit auf eine Nachkommastelle runden
+      temperature = round(temperature * 10) / 10.0;
+      humidity = round(humidity * 10) / 10.0;
+    } else {
+      Serial.print("DHT20-Fehler: ");
+      Serial.println(status);
+    }
+
+    // Füge die Messwerte zur kumulativen Summe hinzu
+    cumulativeSoilMoisture += soilMoisturePercent;
+    cumulativeTemperature += temperature;
+    cumulativeHumidity += humidity;
+    sampleCount++;
+
+    Serial.println("Sensorwerte gesammelt:");
+    Serial.print("Bodenfeuchte: ");
+    Serial.print(soilMoisturePercent);
+    Serial.print(" %, Temperatur: ");
+    Serial.print(temperature);
+    Serial.print(" °C, Luftfeuchtigkeit: ");
+    Serial.print(humidity);
+    Serial.println(" %");
+  }
+
   // Überprüfe, ob das Intervall abgelaufen ist
   if (currentMillis - previousMillis >= intervalMillis && !calibrationMode) {
     previousMillis = currentMillis;
@@ -255,60 +341,46 @@ void loop() {
 
     // Aktualisiere die Zeit
     if (!timeClient.update()) {
-      Serial.println("NTP Client Update fehlgeschlagen. Erzwinge Update...");
+      Serial.println("NTP-Client-Update fehlgeschlagen. Erzwinge Update...");
       timeClient.forceUpdate();
       if (timeClient.update()) {
-        Serial.println("NTP Client erfolgreich aktualisiert.");
+        Serial.println("NTP-Client erfolgreich aktualisiert.");
       } else {
-        Serial.println("NTP Client Update immer noch fehlgeschlagen.");
+        Serial.println("NTP-Client-Update immer noch fehlgeschlagen.");
       }
     } else {
-      Serial.println("NTP Client erfolgreich aktualisiert.");
+      Serial.println("NTP-Client erfolgreich aktualisiert.");
     }
 
-    // Lese den Bodenfeuchtesensor
-    Serial.println("Lese Bodenfeuchtesensor...");
-    int soilMoistureValue = analogRead(soilMoisturePin);
-    Serial.print("Rohwert Bodenfeuchte (analogRead): ");
-    Serial.println(soilMoistureValue);
+    // Berechne die Durchschnittswerte
+    if (sampleCount > 0) {
+      float avgSoilMoisture = cumulativeSoilMoisture / sampleCount;
+      float avgTemperature = cumulativeTemperature / sampleCount;
+      float avgHumidity = cumulativeHumidity / sampleCount;
 
-    float soilMoisturePercent = calculateSoilMoisture(soilMoistureValue);
-    Serial.print("Bodenfeuchte: ");
-    Serial.print(soilMoisturePercent);
-    Serial.println(" %");
+      Serial.print("Durchschnittliche Bodenfeuchte: ");
+      Serial.print(avgSoilMoisture);
+      Serial.println(" %");
 
-    // Lese den DHT20 Sensor
-    Serial.println("Lese DHT20 Sensor...");
-    int status = dht20.read();
-    float temperature = 0;
-    float humidity = 0;
+      Serial.print("Durchschnittliche Temperatur: ");
+      Serial.print(avgTemperature);
+      Serial.println(" °C");
 
-    if (status == DHT20_OK) {
-      temperature = dht20.getTemperature();
-      humidity = dht20.getHumidity();
-
-      // Temperatur und Luftfeuchtigkeit auf eine Nachkommastelle runden
-      temperature = round(temperature * 10) / 10.0;
-      humidity = round(humidity * 10) / 10.0;
-
-      Serial.print("Standort: ");
-      Serial.println(location);
-      Serial.print("Bodenfeuchte Wert: ");
-      Serial.print(soilMoistureValue);
-      Serial.print(" | Bodenfeuchte: ");
-      Serial.print(soilMoisturePercent);
-      Serial.print(" % | Temperatur: ");
-      Serial.print(temperature);
-      Serial.print(" °C | Luftfeuchtigkeit: ");
-      Serial.print(humidity);
+      Serial.print("Durchschnittliche Luftfeuchtigkeit: ");
+      Serial.print(avgHumidity);
       Serial.println(" %");
 
       // Sende die Daten an den Raspberry Pi
       Serial.println("Sende Daten an den Server...");
-      sendData(soilMoisturePercent, temperature, humidity);
+      sendData(avgSoilMoisture, avgTemperature, avgHumidity);
+
+      // Zurücksetzen der kumulativen Variablen
+      cumulativeSoilMoisture = 0;
+      cumulativeTemperature = 0;
+      cumulativeHumidity = 0;
+      sampleCount = 0;
     } else {
-      Serial.print("DHT20 Fehler: ");
-      Serial.println(status);
+      Serial.println("Keine Messwerte gesammelt. Überspringe das Senden von Daten.");
     }
 
     Serial.println("----- Messzyklus beendet -----\n");
@@ -400,7 +472,7 @@ void sendStartupLogs() {
   String jsonData;
   serializeJson(doc, jsonData);
 
-  Serial.print("JSON Daten, die gesendet werden: ");
+  Serial.print("JSON-Daten, die gesendet werden: ");
   Serial.println(jsonData);
 
   // Sende HTTP POST Anfrage
@@ -430,8 +502,6 @@ void sendStartupLogs() {
   Serial.println("Verbindung zum Server geschlossen.");
 }
 
-// Restlicher Code bleibt unverändert...
-
 // Funktion zur Handhabung von seriellen Befehlen für die Kalibrierung und TEST
 void handleSerialCommands() {
   if (Serial.available() > 0) {
@@ -460,7 +530,7 @@ void handleSerialCommands() {
         Serial.println("  CALIBRATE DRY - Setzt den aktuellen Sensorwert als trockenen Zustand.");
         Serial.println("  CALIBRATE WET - Setzt den aktuellen Sensorwert als nassen Zustand.");
         Serial.println("  SHOW CALIBRATION - Zeigt die aktuellen Kalibrierungswerte an.");
-        Serial.println("  RESET CALIBRATION - Setzt die Kalibrierungswerte auf Standard.");
+        Serial.println("  RESET CALIBRATION - Setzt die Kalibrierungswerte zurück.");
         Serial.println("  EXIT CALIBRATION MODE - Verlässt den Kalibrierungsmodus.");
       }
     }
@@ -480,8 +550,7 @@ void handleSerialCommands() {
   }
 }
 
-// Restliche Funktionen wie calibrateDry(), calibrateWet(), etc.
-
+// Funktionen für Kalibrierung
 void calibrateDry() {
   int sensorValue = analogRead(soilMoisturePin);
   airValue = sensorValue;
@@ -533,7 +602,7 @@ void exitCalibrationMode() {
   Serial.println("  CALIBRATE DRY - Setzt den aktuellen Sensorwert als trockenen Zustand.");
   Serial.println("  CALIBRATE WET - Setzt den aktuellen Sensorwert als nassen Zustand.");
   Serial.println("  SHOW CALIBRATION - Zeigt die aktuellen Kalibrierungswerte an.");
-  Serial.println("  RESET CALIBRATION - Setzt die Kalibrierungswerte auf Standard.");
+  Serial.println("  RESET CALIBRATION - Setzt die Kalibrierungswerte zurück.");
   Serial.println("  EXIT CALIBRATION MODE - Verlässt den Kalibrierungsmodus.");
   Serial.println("--------------------------------\n");
 }
@@ -541,7 +610,6 @@ void exitCalibrationMode() {
 // Funktion zur Berechnung der Bodenfeuchtigkeit in Prozent
 float calculateSoilMoisture(int sensorValue) {
   // Konvertiere den Analogwert in einen Prozentwert (0-100%)
-  // Diese Werte müssen kalibriert werden
   int mappedValue = map(sensorValue, airValue, waterValue, 0, 100);
   if (mappedValue < 0)
     mappedValue = 0;
@@ -579,7 +647,7 @@ void sendData(float soilMoisture, float temperature, float humidity) {
   String jsonData;
   serializeJson(doc, jsonData);
 
-  Serial.print("JSON Daten, die gesendet werden: ");
+  Serial.print("JSON-Daten, die gesendet werden: ");
   Serial.println(jsonData);
 
   // Sende HTTP POST Anfrage
@@ -609,24 +677,24 @@ void sendData(float soilMoisture, float temperature, float humidity) {
   Serial.println("Verbindung zum Server geschlossen.");
 }
 
-// Funktion zur Generierung des ISO Timestamps
+// Funktion zur Generierung des ISO-Timestamps
 String getISOTimestamp() {
-  // Holt die aktuelle Zeit vom NTP Client und formatiert sie als ISO 8601
+  // Holt die aktuelle Zeit vom NTP-Client und formatiert sie als ISO 8601
   String isoTimestamp = "";
   if (timeClient.isTimeSet()) {
     unsigned long epochTime = timeClient.getEpochTime();
-    // Verwandle epochTime in ein DateTime Objekt
+    // Verwandle epochTime in ein DateTime-Objekt
     int year, month, day, hour, minute, second;
     getDateTime(epochTime, year, month, day, hour, minute, second);
     char buffer[30];
     sprintf(buffer, "%04d-%02d-%02dT%02d:%02d:%02d+02:00", year, month, day, hour, minute, second);
     isoTimestamp = String(buffer);
-    Serial.print("Generierter ISO Timestamp: ");
+    Serial.print("Generierter ISO-Timestamp: ");
     Serial.println(isoTimestamp);
   } else {
     // Fallback, falls die Zeit nicht gesetzt ist
     isoTimestamp = "1970-01-01T00:00:00+00:00";
-    Serial.println("Zeit nicht gesetzt. Fallback ISO Timestamp: 1970-01-01T00:00:00+00:00");
+    Serial.println("Zeit nicht gesetzt. Fallback ISO-Timestamp: 1970-01-01T00:00:00+00:00");
   }
   return isoTimestamp;
 }
@@ -636,7 +704,7 @@ void getDateTime(unsigned long epochTime, int &year, int &month, int &day, int &
   // Berechne Datum und Uhrzeit aus epochTime
   time_t rawTime = epochTime;
   struct tm * ti;
-  ti = gmtime(&rawTime); // Verwende UTC Zeit
+  ti = gmtime(&rawTime); // Verwende UTC-Zeit
 
   year = ti->tm_year + 1900;
   month = ti->tm_mon + 1;
@@ -661,7 +729,7 @@ void updateInterval() {
   Serial.println(host);
 
   if (client.connect(host, port)) {
-    Serial.println("Verbindung erfolgreich. Sende GET Anfrage für Intervall...");
+    Serial.println("Verbindung erfolgreich. Sende GET-Anfrage für Intervall...");
     client.println(String("GET ") + intervalEndpoint + " HTTP/1.1");
     client.println(String("Host: ") + host);
     client.println("Connection: close");
@@ -711,7 +779,7 @@ void updateInterval() {
   }
 }
 
-// Funktion zur Einrichtung der Over-The-Air Programmierung
+// Funktion zur Einrichtung der Over-The-Air-Programmierung
 void setUpOverTheAirProgramming() {
   // Ändere den OTA-Port (Standard: 8266)
   // ArduinoOTA.setPort(8266);
@@ -719,38 +787,38 @@ void setUpOverTheAirProgramming() {
   // Ändere den Hostnamen für die Anzeige in der Arduino IDE
   String programming_name = String("esp-") + location;
   ArduinoOTA.setHostname(programming_name.c_str());
-  Serial.print("OTA Hostname gesetzt auf: ");
+  Serial.print("OTA-Hostname gesetzt auf: ");
   Serial.println(programming_name);
 
   // Passwort für OTA (optional)
   // ArduinoOTA.setPassword("dein_passwort");
 
   ArduinoOTA.onStart([]() {
-    Serial.println("OTA Update gestartet...");
+    Serial.println("OTA-Update gestartet...");
   });
   ArduinoOTA.onEnd([]() {
-    Serial.println("\nOTA Update beendet.");
+    Serial.println("\nOTA-Update beendet.");
   });
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-    Serial.printf("OTA Fortschritt: %u%%\r", (progress / (total / 100)));
+    Serial.printf("OTA-Fortschritt: %u%%\r", (progress / (total / 100)));
   });
   ArduinoOTA.onError([](ota_error_t error) {
-    Serial.printf("OTA Fehler[%u]: ", error);
+    Serial.printf("OTA-Fehler[%u]: ", error);
     if (error == OTA_AUTH_ERROR) Serial.println("Authentifizierungsfehler");
-    else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Fehler");
+    else if (error == OTA_BEGIN_ERROR) Serial.println("Begin-Fehler");
     else if (error == OTA_CONNECT_ERROR) Serial.println("Verbindungsfehler");
     else if (error == OTA_RECEIVE_ERROR) Serial.println("Empfangsfehler");
-    else if (error == OTA_END_ERROR) Serial.println("End Fehler");
+    else if (error == OTA_END_ERROR) Serial.println("End-Fehler");
   });
 
   ArduinoOTA.begin();
-  Serial.println("Over-The-Air Programmierung (OTA) bereit.");
+  Serial.println("Over-The-Air-Programmierung (OTA) bereit.");
 }
 
-// Funktion zur Laden der Kalibrierungswerte aus dem EEPROM
+// Funktion zum Laden der Kalibrierungswerte aus dem EEPROM
 void loadCalibration() {
   if (EEPROM.length() < EEPROM_SIZE) {
-    Serial.println("EEPROM Größe ist zu klein. Kalibrierungswerte können nicht geladen werden.");
+    Serial.println("EEPROM-Größe ist zu klein. Kalibrierungswerte können nicht geladen werden.");
     airValue = 1023;
     waterValue = 0;
     return;
@@ -780,7 +848,7 @@ void saveCalibration() {
   Serial.println("Kalibrierungswerte im EEPROM gespeichert.");
 }
 
-// Neue Funktion: TEST - Gibt alle aktuellen Sensorwerte aus
+// Funktion: TEST - Gibt alle aktuellen Sensorwerte aus
 void testSensors() {
   Serial.println("----- TEST-Befehl ausgeführt -----");
 
@@ -794,8 +862,8 @@ void testSensors() {
   Serial.print(soilMoisturePercent);
   Serial.println(" %");
 
-  // Lese DHT20 Sensor
-  Serial.println("Lese DHT20 Sensor...");
+  // Lese DHT20-Sensor
+  Serial.println("Lese DHT20-Sensor...");
   int status = dht20.read();
   float temperature = 0;
   float humidity = 0;
@@ -820,7 +888,7 @@ void testSensors() {
     Serial.print(humidity);
     Serial.println(" %");
   } else {
-    Serial.print("DHT20 Fehler: ");
+    Serial.print("DHT20-Fehler: ");
     Serial.println(status);
   }
 
