@@ -12,10 +12,10 @@
 
 // WiFi-Konfiguration
 const char* ssid = "Wifi-SSID";          // Dein WiFi-SSID
-const char* password = "Wifi-password";  // Dein WiFi-Passwort
+const char* password = "Wifi-Password";  // Dein WiFi-Passwort
 
 // Server-Konfiguration
-const char* host = "Static Raspi IPv4"; // IP-Adresse des Raspberry Pi
+const char* host = "Static Raspi IPV4 adress"; // IP-Adresse des Raspberry Pi 
 const int port = 5000;             // Port der Flask-App
 const char* dataEndpoint = "/api/data";       // Endpoint für Daten
 const char* intervalEndpoint = "/get_interval"; // Endpoint für Intervall
@@ -50,16 +50,16 @@ NTPClient timeClient(ntpUDP, "pool.ntp.org", 7200, 60000); // UTC+2, Aktualisier
 
 // Standort des Sensors (Pflanze)
 // Für "Monstera"
-const char* location = "monstera";
-IPAddress local_IP(192, 168, 2, 201); // IP-Adresse für den Monstera ESP
+//const char* location = "monstera";
+//IPAddress local_IP(192, 168, 2, 201); // IP-Adresse für den Monstera ESP
 
 // Für "andere"
 //const char* location = "andere";
 //IPAddress local_IP(192, 168, 2, 202); // IP-Adresse für den "andere" ESP
 
 // Für "Buschkopf"
-//const char* location = "buschkopf";
-//IPAddress local_IP(192, 168, 2, 203); // IP-Adresse für den Buschkopf ESP
+const char* location = "buschkopf";
+IPAddress local_IP(192, 168, 2, 203); // IP-Adresse für den Buschkopf ESP
 
 IPAddress gateway(192, 168, 2, 1);      // IP-Adresse deines Routers
 IPAddress subnet(255, 255, 255, 0);
@@ -369,9 +369,14 @@ void loop() {
       Serial.print(avgHumidity);
       Serial.println(" %");
 
+      // Runden der Messwerte entsprechend der Anforderungen
+      int roundedSoilMoisture = round(avgSoilMoisture); // Ganze Prozent
+      float roundedTemperature = round(avgTemperature * 10) / 10.0; // Eine Nachkommastelle
+      float roundedHumidity = round(avgHumidity * 10) / 10.0; // Eine Nachkommastelle
+
       // Sende die Daten an den Raspberry Pi
       Serial.println("Sende Daten an den Server...");
-      sendData(avgSoilMoisture, avgTemperature, avgHumidity);
+      sendData(roundedSoilMoisture, roundedTemperature, roundedHumidity);
 
       // Zurücksetzen der kumulativen Variablen
       cumulativeSoilMoisture = 0;
@@ -635,12 +640,17 @@ void sendData(float soilMoisture, float temperature, float humidity) {
 
   Serial.println("Verbindung erfolgreich hergestellt.");
 
+  // Runde die Messwerte entsprechend den Anforderungen
+  int roundedSoilMoisture = round(soilMoisture); // Ganze Prozent
+  float roundedTemperature = round(temperature * 10) / 10.0; // Eine Nachkommastelle
+  float roundedHumidity = round(humidity * 10) / 10.0; // Eine Nachkommastelle
+
   // Erstelle JSON-Daten
   StaticJsonDocument<256> doc;
   doc["location"] = location;
-  doc["soil_moisture"] = soilMoisture;
-  doc["temperature"] = temperature;
-  doc["humidity"] = humidity;
+  doc["soil_moisture"] = roundedSoilMoisture;
+  doc["temperature"] = roundedTemperature;
+  doc["humidity"] = roundedHumidity;
   doc["timestamp"] = getISOTimestamp();
 
   String jsonData;
