@@ -11,11 +11,11 @@
 #define FIRMWARE_VERSION "1.0.0"
 
 // WiFi-Konfiguration
-const char* ssid = "SSID";          // Dein WiFi-SSID
-const char* password = "Password";  // Dein WiFi-Passwort
+const char* ssid = "Wifi-SSID";          // Dein WiFi-SSID
+const char* password = "Wifi-password";  // Dein WiFi-Passwort
 
 // Server-Konfiguration
-const char* host = "Statische IPV4 des Raspberry Pi"; // IP-Adresse des Raspberry Pi
+const char* host = "Static Raspi IPv4"; // IP-Adresse des Raspberry Pi
 const int port = 5000;             // Port der Flask-App
 const char* dataEndpoint = "/api/data";       // Endpoint für Daten
 const char* intervalEndpoint = "/get_interval"; // Endpoint für Intervall
@@ -256,7 +256,6 @@ void setup() {
     logPrint("Initialer DHT20-Fehler: ");
     logPrintln(initialStatus);
   }
-
 
   logPrintln("----- Setup abgeschlossen -----\n");
 
@@ -840,12 +839,20 @@ void loadCalibration() {
 
 // Funktion zur Speicherung der Kalibrierungswerte im EEPROM
 void saveCalibration() {
-  EEPROM.write(AIR_VALUE_ADDR, highByte(airValue));
-  EEPROM.write(AIR_VALUE_ADDR + 1, lowByte(airValue));
-  EEPROM.write(WATER_VALUE_ADDR, highByte(waterValue));
-  EEPROM.write(WATER_VALUE_ADDR + 1, lowByte(waterValue));
-  EEPROM.commit();
-  Serial.println("Kalibrierungswerte im EEPROM gespeichert.");
+  // Vor dem Schreiben ins EEPROM überprüfen, ob sich die Werte geändert haben
+  int existingAirValue = (EEPROM.read(AIR_VALUE_ADDR) << 8) | EEPROM.read(AIR_VALUE_ADDR + 1);
+  int existingWaterValue = (EEPROM.read(WATER_VALUE_ADDR) << 8) | EEPROM.read(WATER_VALUE_ADDR + 1);
+
+  if (airValue != existingAirValue || waterValue != existingWaterValue) {
+    EEPROM.write(AIR_VALUE_ADDR, highByte(airValue));
+    EEPROM.write(AIR_VALUE_ADDR + 1, lowByte(airValue));
+    EEPROM.write(WATER_VALUE_ADDR, highByte(waterValue));
+    EEPROM.write(WATER_VALUE_ADDR + 1, lowByte(waterValue));
+    EEPROM.commit();
+    Serial.println("Kalibrierungswerte im EEPROM gespeichert.");
+  } else {
+    Serial.println("Kalibrierungswerte unverändert. Keine Speicherung erforderlich.");
+  }
 }
 
 // Funktion: TEST - Gibt alle aktuellen Sensorwerte aus
