@@ -68,8 +68,8 @@ def process_directory(directory, aggregation_scale):
 
 # Main function
 if __name__ == '__main__':
-    config_file = '/home/pi/sensor_project/config.json'
-    directory = '/home/pi/sensor_project/data'
+    config_file = '/home/pi/plant-monitoring-system/config.json'
+    directory = '/home/pi/plant-monitoring-system/data'
     
     # Load the configuration to get the aggregation scale
     config = load_config(config_file)
