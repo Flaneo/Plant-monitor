@@ -44,7 +44,7 @@
         #feedback {
             margin-top: 15px;
         }
-        #intervalForm {
+        #intervalForm, #aggregationScaleForm {
             max-width: 300px;
             margin: 0 auto 20px auto;
         }
@@ -145,6 +145,15 @@
                 <button id="setIntervalButton" class="btn btn-primary">Intervall einstellen</button>
             </div>
             <small id="currentInterval" class="form-text text-muted">Aktuelles Intervall: Lädt...</small>
+        </div>
+
+        <!-- Aggregationsskala-Einstellung -->
+        <div id="aggregationScaleForm" class="text-center mb-4">
+            <div class="input-group">
+                <input type="text" id="aggregationScaleInput" class="form-control" placeholder='Aggregation Scale (z.B. "30T", "1H")'>
+                <button id="setAggregationScaleButton" class="btn btn-primary">Aggregation Scale einstellen</button>
+            </div>
+            <small id="currentAggregationScale" class="form-text text-muted">Aktuelle Aggregationsskala: Lädt...</small>
         </div>
 
         <!-- Löschen Button -->
@@ -633,6 +642,7 @@
 
         window.onload = function() {
             loadCurrentInterval();
+            loadCurrentAggregationScale(); // Lade den aktuellen Aggregationsintervall
             loadThresholds().then(() => {
                 ['monstera', 'buschkopf', 'andere'].forEach(function(location) {
                     createChart(location);
@@ -770,12 +780,13 @@
             .then(response => response.json())
             .then(result => {
                 if (result.status === 'success') {
-                    document.getElementById('feedback').classList.remove('d-none', 'alert-danger');
-                    document.getElementById('feedback').classList.add('alert-success');
-                    document.getElementById('feedback').innerText = `Intervall erfolgreich auf ${interval} Minuten gesetzt.`;
+                    const feedbackElement = document.getElementById('feedback');
+                    feedbackElement.classList.remove('d-none', 'alert-danger');
+                    feedbackElement.classList.add('alert-success');
+                    feedbackElement.innerText = `Intervall erfolgreich auf ${interval} Minuten gesetzt.`;
                     document.getElementById('currentInterval').innerText = 'Aktuelles Intervall: ' + interval + ' Minuten';
                     setTimeout(() => {
-                        document.getElementById('feedback').classList.add('d-none');
+                        feedbackElement.classList.add('d-none');
                     }, 5000);
                 } else {
                     alert('Fehler beim Einstellen des Intervalls: ' + (result.message || 'Unbekannter Fehler.'));
@@ -786,6 +797,68 @@
                 alert('Ein Fehler ist aufgetreten.');
             });
         }
+
+        // Funktion zum Laden des aktuellen Aggregationsintervalls
+        function loadCurrentAggregationScale() {
+            fetch('/get_aggregation_scale')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        document.getElementById('currentAggregationScale').innerText = 'Aktuelle Aggregationsskala: ' + data.aggregation_scale;
+                    } else {
+                        document.getElementById('currentAggregationScale').innerText = 'Aktuelle Aggregationsskala: Fehler beim Laden';
+                    }
+                })
+                .catch(error => {
+                    console.error('Fehler beim Laden der aktuellen Aggregationsskala:', error);
+                    document.getElementById('currentAggregationScale').innerText = 'Aktuelle Aggregationsskala: Fehler beim Laden';
+                });
+        }
+
+        // Funktion zum Einstellen der Aggregationsskala
+        function setAggregationScale() {
+            const aggregationScaleInput = document.getElementById('aggregationScaleInput').value.trim();
+
+            // Validierung: muss mit 'T' oder 'H' enden und davor eine positive Zahl stehen
+            const regex = /^(\d+)(T|H)$/;
+            const match = aggregationScaleInput.match(regex);
+
+            if (!match) {
+                alert('Ungültiges Format für Aggregationsskala. Erwartet z.B. "30T" (Minuten) oder "2H" (Stunden).');
+                return;
+            }
+
+            fetch('/set_aggregation_scale', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ aggregation_scale: aggregationScaleInput }),
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.status === 'success') {
+                    const feedbackElement = document.getElementById('feedback');
+                    feedbackElement.classList.remove('d-none', 'alert-danger');
+                    feedbackElement.classList.add('alert-success');
+                    feedbackElement.innerText = `Aggregationsskala erfolgreich auf ${result.aggregation_scale} gesetzt.`;
+                    document.getElementById('currentAggregationScale').innerText = 'Aktuelle Aggregationsskala: ' + result.aggregation_scale;
+                    document.getElementById('aggregationScaleInput').value = '';
+                    setTimeout(() => {
+                        feedbackElement.classList.add('d-none');
+                    }, 5000);
+                } else {
+                    alert('Fehler beim Einstellen der Aggregationsskala: ' + (result.message || 'Unbekannter Fehler.'));
+                }
+            })
+            .catch(error => {
+                console.error('Fehler beim Einstellen der Aggregationsskala:', error);
+                alert('Ein Fehler ist aufgetreten.');
+            });
+        }
+
+        // Event-Listener für den Aggregationsskala-Einstellungs-Button
+        document.getElementById('setAggregationScaleButton').addEventListener('click', setAggregationScale);
 
         // Event-Listener für den Intervall-Einstellungs-Button
         document.getElementById('setIntervalButton').addEventListener('click', setIntervalMinutes);
