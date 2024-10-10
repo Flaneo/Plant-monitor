@@ -2,7 +2,13 @@ import pandas as pd
 import json
 import os
 
-def aggregate_data(input_file):
+def load_config(config_file):
+    # Load the configuration file
+    with open(config_file, 'r') as f:
+        config = json.load(f)
+    return config
+
+def aggregate_data(input_file, aggregation_scale):
     # Load the data from the JSON file
     with open(input_file, 'r') as f:
         data = json.load(f)
@@ -24,8 +30,8 @@ def aggregate_data(input_file):
     # Set timestamp as index for easier aggregation
     df.set_index('timestamp', inplace=True)
     
-    # Aggregating data by hourly mean, excluding non-numeric columns like 'location'
-    df_agg = df.resample('h').mean(numeric_only=True)
+    # Aggregating data based on the aggregation scale from config
+    df_agg = df.resample(aggregation_scale).mean(numeric_only=True)
     
     # Remove rows with NaN values
     df_agg.dropna(inplace=True)
@@ -51,15 +57,22 @@ def aggregate_data(input_file):
     
     print(f"Aggregation completed for {input_file}")
 
-def process_directory(directory):
+def process_directory(directory, aggregation_scale):
     # Iterate over all files in the directory
     for filename in os.listdir(directory):
         # Only process JSON files
         if filename.endswith('.json'):
             file_path = os.path.join(directory, filename)
             print(f"Processing file: {file_path}")
-            aggregate_data(file_path)
+            aggregate_data(file_path, aggregation_scale)
 
-# Example usage
-directory = '/home/pi/plant-monitoring-system/data'
-process_directory(directory)
+# Main function
+if __name__ == '__main__':
+    config_file = '/home/pi/sensor_project/config.json'
+    directory = '/home/pi/sensor_project/data'
+    
+    # Load the configuration to get the aggregation scale
+    config = load_config(config_file)
+    
+    # Process all files in the directory with the configured aggregation scale
+    process_directory(directory, config['aggregation_scale'])
