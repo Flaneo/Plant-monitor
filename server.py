@@ -20,8 +20,9 @@ CONFIG_FILE = 'config.json'
 LOGS_DIR = 'logs'  # Verzeichnis für Logs
 THRESHOLDS_FILE = 'thresholds.json'
 
-# Standardintervall
+# Standardintervall und Aggregationsskala
 DEFAULT_INTERVAL = 5
+DEFAULT_AGGREGATION_SCALE = "30T"  # Standardwert für aggregation_scale (z.B. "30T", "1H")
 
 # Stelle sicher, dass die Verzeichnisse existieren
 for directory in [DATA_DIR, LOGS_DIR]:
@@ -35,11 +36,17 @@ def load_config():
         with open(CONFIG_FILE, 'r') as f:
             try:
                 config = json.load(f)
-                return config
             except json.JSONDecodeError:
-                pass
-    # Standardkonfiguration
-    config = {'interval': DEFAULT_INTERVAL}
+                config = {}
+    else:
+        config = {}
+    
+    # Setze Standardwerte, falls nicht vorhanden
+    if 'interval' not in config:
+        config['interval'] = DEFAULT_INTERVAL
+    if 'aggregation_scale' not in config:
+        config['aggregation_scale'] = DEFAULT_AGGREGATION_SCALE
+    
     save_config(config)
     return config
 
@@ -264,6 +271,54 @@ def delete_all_data():
         return jsonify({'status': 'success'}), 200
     except Exception as e:
         print(f"Fehler beim Löschen der Sensordaten: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+# Neuer Endpunkt zum Setzen des Aggregationsintervalls
+@app.route('/set_aggregation_scale', methods=['POST'])
+def set_aggregation_scale():
+    data = request.get_json()
+    if not data or 'aggregation_scale' not in data:
+        return jsonify({'status': 'error', 'message': 'Keine aggregation_scale bereitgestellt'}), 400
+
+    aggregation_scale = data['aggregation_scale']
+
+    # Validierung: muss eine Zeichenkette sein, die mit 'T' oder 'H' endet
+    if not isinstance(aggregation_scale, str) or not (aggregation_scale.endswith('T') or aggregation_scale.endswith('H')):
+        return jsonify({'status': 'error', 'message': 'Ungültiges Format für aggregation_scale. Erwartet z.B. "30T" oder "1H".'}), 400
+
+    # Weitere Validierung: Zahl vor 'T' oder 'H' muss positiv sein
+    try:
+        if aggregation_scale.endswith('T'):
+            value = int(aggregation_scale[:-1])
+            if value <= 0:
+                raise ValueError
+        elif aggregation_scale.endswith('H'):
+            value = int(aggregation_scale[:-1])
+            if value <= 0:
+                raise ValueError
+    except ValueError:
+        return jsonify({'status': 'error', 'message': 'Ungültiger Wert für aggregation_scale.'}), 400
+
+    # Aktualisiere die Konfiguration
+    try:
+        config = load_config()
+        config['aggregation_scale'] = aggregation_scale
+        save_config(config)
+        print(f"aggregation_scale auf {aggregation_scale} gesetzt.")
+        return jsonify({'status': 'success', 'aggregation_scale': aggregation_scale}), 200
+    except Exception as e:
+        print(f"Fehler beim Setzen der aggregation_scale: {e}")
+        return jsonify({'status': 'error', 'message': 'Fehler beim Setzen der aggregation_scale'}), 500
+
+# (Optional) Endpunkt zum Abrufen des aktuellen Aggregationsintervalls
+@app.route('/get_aggregation_scale', methods=['GET'])
+def get_aggregation_scale():
+    try:
+        config = load_config()
+        aggregation_scale = config.get('aggregation_scale', DEFAULT_AGGREGATION_SCALE)
+        return jsonify({'status': 'success', 'aggregation_scale': aggregation_scale}), 200
+    except Exception as e:
+        print(f"Fehler beim Abrufen der aggregation_scale: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 if __name__ == '__main__':
