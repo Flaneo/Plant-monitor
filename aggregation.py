@@ -61,5 +61,5 @@ def process_directory(directory):
             aggregate_data(file_path)
 
 # Example usage
-directory = '/home/pi/sensor_project/data'
+directory = '/home/pi/plant-monitoring-system/data'
 process_directory(directory)
