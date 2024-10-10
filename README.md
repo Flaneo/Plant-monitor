@@ -134,3 +134,9 @@ To ensure the server starts on boot:
 1. Check the status:
 
 > sudo systemctl status plant-monitor.service
+
+### Crontab for automated data aggregation:
+
+> crontab -e
+
+> 0 0 * * * /usr/bin/python3 /home/pi/plant-monitoring-system/aggregation.py
