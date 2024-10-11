@@ -9,6 +9,7 @@ This project is designed to monitor environmental conditions for plants using an
 - **Over-the-Air (OTA) programming** support for easy firmware updates.
 - **Customizable threshold values** for each plant, enabling notifications or alerts when conditions go out of the ideal range.
 - **Simple console commands** for testing sensor functionality and calibrating sensors.
+- **Data aggregation** for better no lag with data collected and stored over weeks.
 
 ### 
 ### Components:
